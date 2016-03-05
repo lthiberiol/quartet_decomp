@@ -39,9 +39,10 @@ class original:
         self.threads  = num_threads
         self.fasttree = fasttree
         
-        self.msa_folder  = '%s/MSAs' %self.folder
-        self.tree_folder = '%s/trees' %self.folder
-        self.bs_folder   = '%s/bootstraps' %self.folder
+        self.msa_folder          = '%s/MSAs' %self.folder
+        self.tree_folder         = '%s/trees' %self.folder
+        self.bs_folder           = '%s/bootstraps' %self.folder
+        self.quartet_ml_folder   = '%s/quartet_ml' %self.folder
 
         try:
             if not isdir(self.msa_folder):
@@ -133,7 +134,65 @@ class original:
                     dist_matrix = pd.DataFrame( index= taxa_order, columns=taxa_order, data=squareform(condensed_matrix) )
                     dist_matrix.to_csv( '%s-pw.tab' %replicate, sep='\t')
 
-    def assess quartets(self, dist_matrix ):
+    def run_ml_mapping( self, (fasta, tree) ):
+        outfolder = self.quartet_ml_folder
+        inaln     = '%s/%s' %( self.msa_folder, fasta )
+        intree    = '%s/%s' %( self.tree_folder, tree )
+
+        if system( self.raxml+' -f q -p 12345 -s '+inaln+' -n '+fasta+' -T 2 -m PROTCATWAG -t '+intree+' -w '+outfolder ):
+            raise
+            exit( '**Error while running:\n\t'+self.raxml+' -f q -p 12345 -s '+inaln+' -n '+fasta+' -T 2 -m PROTCATWAG -t '+intree+' -w '+outfolder )
+
+        return 'RAxML_quartets.'+fasta
+
+    def ml_quartets(self, infile):
+        infile = '%s/%s' %(self.quartet_ml_folder, infile)
+        
+        topologies_lnl = open(infile).xreadlines()
+
+        #
+        #throw away the first two lines
+        topologies_lnl.next()
+        topologies_lnl.next()
+
+        codes = {}
+        for line in topologies_lnl:
+            line = line.split()
+            if not line:
+                break
+            codes[line[1]] = line[0]
+
+        #
+        #throw away next line
+        topologies_lnl.next()
+
+        best_topology_prop = []
+        while topologies_lnl:
+            try:
+                lines = [topologies_lnl.next(), topologies_lnl.next(), topologies_lnl.next() ]
+            except:
+                break
+
+            lnl = []
+            topologies = []
+            for line in lines:
+                line = line.split(': ')
+                lnl.append( float(line[1]) )
+#                topologies.append( frozenset( [ frozenset( [ codes[line[0]], codes[line[2]] ] ),
+#                                                frozenset( [ codes[line[6]], codes[line[8]] ] ) ]
+#                                            ) 
+#                                 )
+
+            lnl  = np.asarray(lnl)
+            tmp  = np.exp( lnl - lnl.max() )
+            prob = tmp - tmp.sum()
+
+            best_topology_prop.append( prob.max() )
+
+        return best_topology_prop
+
+
+    def bs_quartets(self, dist_matrix ):
 
         quartets = {}
 
